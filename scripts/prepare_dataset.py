@@ -43,18 +43,47 @@ def extract_array_from_object(obj):
     if isinstance(obj, np.ndarray) and obj.ndim > 0:
         return obj
 
+    if isinstance(obj, torch.Tensor):
+        return obj.detach().cpu().numpy()
+
+    # torchcodec.decoders.AudioDecoder / datasets._torchcodec.AudioDecoder
+    if hasattr(obj, "get_all_samples"):
+        try:
+            samples = obj.get_all_samples()
+            if hasattr(samples, "data"):
+                data_tensor = samples.data
+                if isinstance(data_tensor, torch.Tensor):
+                    return data_tensor.detach().cpu().numpy()
+                return np.asarray(data_tensor)
+        except Exception as e:
+            logging.debug(f"get_all_samples failed: {e}")
+
     if hasattr(obj, "to_numpy"):
-        return obj.to_numpy()
+        try:
+            return obj.to_numpy()
+        except Exception:
+            pass
+
     if hasattr(obj, "get_array"):
-        return obj.get_array()
+        try:
+            return obj.get_array()
+        except Exception:
+            pass
+
     if hasattr(obj, "decode"):
-        return obj.decode()
+        try:
+            return obj.decode()
+        except Exception:
+            pass
+
     if hasattr(obj, "array"):
         return extract_array_from_object(obj.array)
 
     try:
         # Try indexing or slicing if object supports it
-        return np.asarray(obj[:])
+        res = np.asarray(obj[:])
+        if res.ndim > 0:
+            return res
     except Exception:
         pass
 
@@ -75,7 +104,7 @@ def process_and_save_audio(audio_data, target_sr: int, output_wav_path: Path):
     if isinstance(audio_data, dict):
         orig_sr = audio_data.get("sampling_rate") or target_sr
         
-        # Priority 1: Try reading raw bytes if available (avoids AudioDecoder issues)
+        # Priority 1: Try reading raw bytes if available
         if audio_data.get("bytes") is not None:
             try:
                 bytes_data = audio_data["bytes"]
@@ -96,9 +125,17 @@ def process_and_save_audio(audio_data, target_sr: int, output_wav_path: Path):
             except Exception:
                 array = None
 
-        # Priority 3: Try raw array / AudioDecoder conversion
+        # Priority 3: Try raw array / AudioDecoder conversion from 'array' key
         if array is None and audio_data.get("array") is not None:
             array = extract_array_from_object(audio_data["array"])
+
+        # Priority 4: Try extracting from any object in dict
+        if array is None:
+            for val in audio_data.values():
+                res = extract_array_from_object(val)
+                if res is not None:
+                    array = res
+                    break
 
     else:
         array = extract_array_from_object(audio_data)
