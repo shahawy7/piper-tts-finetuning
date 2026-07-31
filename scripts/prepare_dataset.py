@@ -31,6 +31,42 @@ def load_config(config_path: str) -> dict:
             return yaml.safe_load(f)
     return {}
 
+def extract_array_from_object(obj):
+    """Recursively extracts a 1D/2D numpy array from raw_array / AudioDecoder objects."""
+    if obj is None:
+        return None
+
+    # Handle 0D numpy scalar wrapping an object
+    if isinstance(obj, np.ndarray) and obj.ndim == 0:
+        obj = obj.item()
+
+    if isinstance(obj, np.ndarray) and obj.ndim > 0:
+        return obj
+
+    if hasattr(obj, "to_numpy"):
+        return obj.to_numpy()
+    if hasattr(obj, "get_array"):
+        return obj.get_array()
+    if hasattr(obj, "decode"):
+        return obj.decode()
+    if hasattr(obj, "array"):
+        return extract_array_from_object(obj.array)
+
+    try:
+        # Try indexing or slicing if object supports it
+        return np.asarray(obj[:])
+    except Exception:
+        pass
+
+    try:
+        arr = np.asarray(obj)
+        if arr.ndim > 0:
+            return arr
+    except Exception:
+        pass
+
+    return None
+
 def process_and_save_audio(audio_data, target_sr: int, output_wav_path: Path):
     """Resamples audio tensor/array to target sample rate and saves as mono 16-bit WAV."""
     array = None
@@ -62,28 +98,13 @@ def process_and_save_audio(audio_data, target_sr: int, output_wav_path: Path):
 
         # Priority 3: Try raw array / AudioDecoder conversion
         if array is None and audio_data.get("array") is not None:
-            raw_array = audio_data["array"]
-            try:
-                if hasattr(raw_array, "get_array"):
-                    array = raw_array.get_array()
-                elif hasattr(raw_array, "to_numpy"):
-                    array = raw_array.to_numpy()
-                elif hasattr(raw_array, "decode"):
-                    array = raw_array.decode()
-                elif hasattr(raw_array, "array"):
-                    array = raw_array.array
-                else:
-                    array = np.asarray(raw_array)
-            except Exception:
-                array = None
-    else:
-        try:
-            array = np.asarray(audio_data)
-        except Exception:
-            array = None
+            array = extract_array_from_object(audio_data["array"])
 
-    if array is None or (isinstance(array, (np.ndarray, list)) and len(array) == 0):
-        raise ValueError(f"Could not extract audio array from audio data structure: {type(audio_data)}")
+    else:
+        array = extract_array_from_object(audio_data)
+
+    if array is None or not hasattr(array, "__len__") or len(array) == 0:
+        raise ValueError(f"Could not extract valid audio array from audio data structure: {type(audio_data)}")
 
     waveform = torch.tensor(array, dtype=torch.float32)
     if waveform.ndim == 1:
@@ -101,7 +122,7 @@ def process_and_save_audio(audio_data, target_sr: int, output_wav_path: Path):
 
 def prepare_dataset(dataset_dir: Path, output_dir: Path, target_sr: int = 22050, train_ratio: float = 0.95, seed: int = 42):
     """Processes dataset files into wavs/ directory and metadata.csv."""
-    from datasets import load_from_disk
+    from datasets import Audio, load_from_disk
     
     logging.info(f"Loading dataset from: '{dataset_dir}'")
     if not dataset_dir.exists():
@@ -113,6 +134,14 @@ def prepare_dataset(dataset_dir: Path, output_dir: Path, target_sr: int = 22050,
         data = dataset[split_name]
     else:
         data = dataset
+
+    # Force HF datasets to decode audio column into standard numpy arrays if possible
+    try:
+        if hasattr(data, "cast_column") and "audio" in data.column_names:
+            logging.info("Casting audio column with datasets.Audio(decode=True)...")
+            data = data.cast_column("audio", Audio(decode=True))
+    except Exception as e:
+        logging.warning(f"Audio column casting skipped: {e}")
 
     wavs_dir = output_dir / "wavs"
     wavs_dir.mkdir(parents=True, exist_ok=True)
@@ -132,7 +161,7 @@ def prepare_dataset(dataset_dir: Path, output_dir: Path, target_sr: int = 22050,
             
         try:
             process_and_save_audio(audio, target_sr, wav_path)
-            # Metadata format for Piper: filename|speaker|text or filename|text
+            # Metadata format for Piper: filename|speaker|text
             metadata_entries.append(f"{sample_id}|speaker1|{text}")
         except Exception as e:
             logging.warning(f"Skipping sample {idx} due to error: {e}")
