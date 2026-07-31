@@ -26,14 +26,23 @@ All you need is:
 
 ## 🚀 Step 1: Prepare Your Workspace in Google Colab
 
-### Option A: Upload to Google Drive
-1. Open [Google Drive](https://drive.google.com).
-2. Upload the `piper-tts-finetuning` folder into your Google Drive under `MyDrive/`.
+### Option A: Clone from GitHub (Recommended ✅)
 
-### Option B: Open Notebooks directly from GitHub (Recommended)
-1. Push this repository to your GitHub account.
+You do **not** need to upload anything to Google Drive manually. The notebook will clone the repository directly inside Colab and use Google Drive only for saving checkpoints and outputs.
+
+1. Push this repository to your own GitHub account (public or private).
 2. Go to [Google Colab](https://colab.research.google.com).
-3. Click **GitHub** tab, enter your repository URL, and open notebook `01_environment.ipynb`.
+3. Open notebook `01_environment.ipynb` using one of these methods:
+   - **From GitHub tab**: Click **File ➔ Open notebook ➔ GitHub** tab, paste your repo URL, and select `notebooks/01_environment.ipynb`.
+   - **Direct URL**: Navigate to `https://colab.research.google.com/github/YOUR_USERNAME/piper-tts-finetuning/blob/main/notebooks/01_environment.ipynb`.
+4. The first cell in the notebook will automatically clone the repository into `/content/piper-tts-finetuning/` and set it as the working directory.
+
+### Option B: Upload to Google Drive (Fallback)
+
+If you prefer not to use GitHub:
+1. Download or zip this repository folder.
+2. Upload it into your Google Drive under `MyDrive/`.
+3. In the Colab notebook, change the working directory to the uploaded folder path.
 
 > [!IMPORTANT]
 > **Enable GPU in Google Colab**:
@@ -47,7 +56,7 @@ The repository includes **5 numbered notebooks** inside the `notebooks/` folder.
 
 ```text
 ┌──────────────────────────┐
-│  01_environment.ipynb    │ ➔ Sets up GPU, mounts Google Drive & installs tools
+│  01_environment.ipynb    │ ➔ Clones repo from GitHub, mounts Drive & installs tools
 └────────────┬─────────────┘
              ▼
 ┌──────────────────────────┐
@@ -70,10 +79,11 @@ The repository includes **5 numbered notebooks** inside the `notebooks/` folder.
 ---
 
 ### 1️⃣ Notebook 1: Environment Setup (`01_environment.ipynb`)
-- **What it does**: Connects Colab to your Google Drive and installs required libraries (`torch`, `espeak-ng`, `piper-phonemize`).
+- **What it does**: Clones the repository from GitHub into Colab, verifies GPU access, mounts Google Drive, and installs required libraries (`torch`, `espeak-ng`, `piper-phonemize`).
 - **How to run**: Click the **Play (▶)** button on each code cell from top to bottom.
+- **First cell**: Edit the `REPO_URL` variable to point to your GitHub repository. If the repo is already cloned from a previous session, it will automatically `git pull` the latest changes instead.
 - **What to look for**: A message asking for permission to mount Google Drive. Click **Connect to Google Drive** and sign in.
-- **Output**: Creates a folder in your Drive named `Arabic-Piper/` where all checkpoints and audio files will be safely stored.
+- **Output**: The working directory is set to `/content/piper-tts-finetuning/`, and a folder named `Arabic-Piper/` is created in your Drive for checkpoints and outputs.
 
 ---
 
