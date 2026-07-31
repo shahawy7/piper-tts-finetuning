@@ -13,8 +13,8 @@ Piper is a fast, local neural text-to-speech system based on VITS. This reposito
 - 📁 **Separation of Code & Data**: No audio files or binary checkpoints are stored in Git.
 - 📊 **Comprehensive Evaluation**: Automated benchmark synthesis, Real-Time Factor (RTF) timing, WER/CER tracking, and TensorBoard logging.
 - ⚡ **ONNX Export**: Streamlined pipeline to convert PyTorch Lightning checkpoints to optimized ONNX models ready for Piper inference engines.
+- 🎚️ **Speed Control**: Adjust voice speed via `--length-scale` parameter across all scripts.
 - 🐣 **[Beginner's Guide](docs/beginner_guide.md)**: New to fine-tuning? Read our step-by-step beginner guide!
-
 
 ---
 
@@ -39,12 +39,8 @@ Piper is a fast, local neural text-to-speech system based on VITS. This reposito
 │   ├── evaluate.py               # Objective metrics calculation (WER, CER, RTF)
 │   └── export_model.py           # Convert PyTorch Lightning .ckpt to ONNX + json config
 │
-├── notebooks/                    # Sequential Google Colab notebooks
-│   ├── 01_environment.ipynb      # Step 1: Environment & dependency setup
-│   ├── 02_dataset.ipynb          # Step 2: Dataset download & pre-processing
-│   ├── 03_baseline.ipynb         # Step 3: Baseline model benchmarking
-│   ├── 04_train.ipynb            # Step 4: Training & Google Drive check-pointing
-│   └── 05_evaluate.ipynb         # Step 5: Export, evaluation & comparison
+├── notebooks/
+│   └── arabic_piper_finetuning.ipynb  # Complete pipeline in a single Colab notebook
 │
 ├── benchmark/                    # Benchmark evaluation assets
 │   ├── benchmark_sentences.txt   # Diacritized MSA test sentences
@@ -55,8 +51,6 @@ Piper is a fast, local neural text-to-speech system based on VITS. This reposito
     ├── local_testing_guide.md    # Local CPU testing guide (before & after training)
     ├── training_plan.md          # Technical architecture & pipeline plan
     └── experiment_log.md         # Matrix tracking experiment metrics
-
-
 ```
 
 ---
@@ -78,13 +72,26 @@ Arabic-Piper/
 
 ---
 
-## 🚀 Step-by-Step Workflow (Google Colab)
+## 🚀 Quick Start (Google Colab)
 
-1. **Notebook 01 - Environment**: Mount Google Drive, clone repository, install system dependencies (`espeak-ng`, `piper-train`).
-2. **Notebook 02 - Dataset**: Download the `NightPrince/Arabic-professional-voice` dataset and base checkpoint (`ar_JO-kareem-medium`). Format into LJSpeech layout.
-3. **Notebook 03 - Baseline**: Synthesize benchmark MSA sentences using the baseline `ar_JO-kareem-medium` model to set quality & RTF baselines.
-4. **Notebook 04 - Training**: Launch or resume fine-tuning with `piper_train`. Save checkpoints and TensorBoard logs directly to Google Drive.
-5. **Notebook 05 - Evaluation**: Export the best checkpoint to `.onnx` and evaluate objective metrics (WER/CER, RTF) against the baseline.
+Everything runs from a **single notebook** — no need to juggle multiple files:
+
+1. Push this repo to your GitHub account.
+2. Open `notebooks/arabic_piper_finetuning.ipynb` in Google Colab:
+   - **From GitHub tab**: Click **File → Open notebook → GitHub**, paste your repo URL, and select the notebook.
+   - **Direct URL**: `https://colab.research.google.com/github/YOUR_USERNAME/piper-tts-finetuning/blob/main/notebooks/arabic_piper_finetuning.ipynb`
+3. Edit the `REPO_URL` variable in the first cell with your GitHub username.
+4. Enable GPU: **Runtime → Change runtime type → T4 GPU → Save**.
+5. Run all cells top-to-bottom.
+
+The notebook contains 5 sections:
+| Section | What it does |
+|---|---|
+| **⚙️ Section 1** | Clones repo from GitHub, mounts Drive, installs dependencies |
+| **📦 Section 2** | Downloads dataset & prepares audio (22,050 Hz LJSpeech format) |
+| **🔊 Section 3** | Baseline benchmark — generates "BEFORE" audio samples |
+| **🏋️ Section 4** | Fine-tuning with auto-checkpoint to Drive (resumes on reconnect) |
+| **📊 Section 5** | Exports ONNX model & compares "BEFORE" vs "AFTER" audio |
 
 ---
 
@@ -102,10 +109,12 @@ python3 scripts/test_local.py --mode baseline --text "السَّلَامُ عَ�
 # 3. Test Fine-Tuned model locally on CPU (After Training)
 python3 scripts/test_local.py --mode finetuned --model outputs/experiment001/ar_JO_finetuned.onnx
 
-# 4. Interactive Terminal Mode
+# 4. Control voice speed (< 1.0 faster, > 1.0 slower)
+python3 scripts/test_local.py --mode baseline --length-scale 0.85 --text "مَرْحَبًا"
+
+# 5. Interactive Terminal Mode
 python3 scripts/test_local.py --mode baseline --interactive
 ```
-
 
 ---
 

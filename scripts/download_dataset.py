@@ -36,19 +36,35 @@ def download_dataset(dataset_repo: str, output_dir: Path):
     return dataset
 
 def download_base_checkpoint(checkpoint_repo: str, filename: str, output_dir: Path):
-    """Downloads base pretrained model checkpoint from Hugging Face Hub."""
+    """Downloads base pretrained model checkpoint and config from Hugging Face Hub."""
     from huggingface_hub import hf_hub_download
     
-    logging.info(f"Downloading base checkpoint '{filename}' from repo '{checkpoint_repo}'...")
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    # Download the .ckpt file
+    logging.info(f"Downloading base checkpoint '{filename}' from repo '{checkpoint_repo}'...")
     ckpt_path = hf_hub_download(
         repo_id=checkpoint_repo,
         filename=filename,
         local_dir=str(output_dir),
-        repo_type="dataset" if "checkpoints" in checkpoint_repo else "model"
+        repo_type="dataset"
     )
     logging.info(f"Base checkpoint saved at: '{ckpt_path}'")
+    
+    # Also download config.json from the same directory
+    config_filename = str(Path(filename).parent / "config.json")
+    try:
+        logging.info(f"Downloading training config '{config_filename}'...")
+        config_path = hf_hub_download(
+            repo_id=checkpoint_repo,
+            filename=config_filename,
+            local_dir=str(output_dir),
+            repo_type="dataset"
+        )
+        logging.info(f"Training config saved at: '{config_path}'")
+    except Exception as e:
+        logging.warning(f"Could not download training config: {e}")
+    
     return ckpt_path
 
 def main():
@@ -65,7 +81,7 @@ def main():
     dataset_repo = args.dataset_repo or cfg.get("dataset", {}).get("hf_repo", "NightPrince/Arabic-professional-voice")
     
     checkpoint_repo = cfg.get("model", {}).get("base_checkpoint_hf_repo", "rhasspy/piper-checkpoints")
-    checkpoint_filename = cfg.get("model", {}).get("base_checkpoint_filename", "ar_JO-kareem-medium.ckpt")
+    checkpoint_filename = cfg.get("model", {}).get("base_checkpoint_filename", "ar/ar_JO/kareem/medium/epoch=5079-step=1682020.ckpt")
     
     target_dataset_dir = Path(drive_root) / datasets_subdir
     target_ckpt_dir = Path(drive_root) / "checkpoints" / "base"
@@ -80,7 +96,7 @@ def main():
     try:
         download_base_checkpoint(checkpoint_repo, checkpoint_filename, target_ckpt_dir)
     except Exception as e:
-        logging.warning(f"Note on checkpoint download: {e}")
+        logging.error(f"Error downloading checkpoint: {e}")
 
 if __name__ == "__main__":
     main()

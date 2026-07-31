@@ -8,7 +8,8 @@ experiment:
 
 model:
   base_model_name: "ar_JO-kareem-medium"
-  base_checkpoint_url: "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/ar/ar_JO/kareem/medium/ar_JO-kareem-medium.onnx"
+  base_checkpoint_hf_repo: "rhasspy/piper-checkpoints"  # HF dataset repo
+  base_checkpoint_filename: "ar/ar_JO/kareem/medium/epoch=5079-step=1682020.ckpt"
   language: "ar_JO"
   sample_rate: 22050
   num_mels: 80
