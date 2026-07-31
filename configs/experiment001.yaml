@@ -13,8 +13,10 @@ model:
   language: "ar_JO"
   sample_rate: 22050
   num_mels: 80
+  length_scale: 1.0
   phoneme_type: "espeak"
   phoneme_language: "ar"
+
 
 dataset:
   hf_repo: "NightPrince/Arabic-professional-voice"

@@ -63,6 +63,25 @@ python scripts/test_local.py --mode compare --model outputs/experiment001/ar_JO_
 
 ---
 
+## ⚡ 5. Voice Speed Control (`--length-scale`)
+
+You can control the speaking speed of the generated voice using the `--length-scale` parameter:
+- **`--length-scale 0.8`**: Faster speaking speed (80% duration).
+- **`--length-scale 1.0`**: Normal default speaking speed (100% duration).
+- **`--length-scale 1.3`**: Slower, more deliberate speaking speed (130% duration).
+
+### Speed Control Examples:
+```bash
+# Generate faster Arabic speech (e.g. 0.85 scale)
+python scripts/test_local.py --mode baseline --length-scale 0.85 --text "السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللَّهِ وَبَرَكَاتُهُ."
+
+# Generate slower, clearer Arabic speech (e.g. 1.25 scale)
+python scripts/test_local.py --mode baseline --length-scale 1.25 --text "السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللَّهِ وَبَرَكَاتُهُ."
+```
+
+
+---
+
 ## 💬 5. Interactive Terminal Prompt Mode
 
 You can type custom diacritized Arabic text interactively and hear/save audio immediately!
