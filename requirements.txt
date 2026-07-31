@@ -1,0 +1,25 @@
+# Dataset & HF Hub
+datasets>=2.16.0
+huggingface_hub>=0.20.0
+
+# Audio Processing & Data Analysis
+soundfile>=0.12.1
+librosa>=0.10.1
+torchaudio>=2.1.0
+numpy>=1.24.0,<2.0.0
+pandas>=2.1.0
+scipy>=1.11.0
+
+# Phonemization & Text Processing
+piper-phonemize>=1.1.0; platform_system != "Windows"
+
+# Modeling & Inference
+torch>=2.1.0
+pytorch-lightning>=2.1.0
+onnxruntime>=1.16.0
+
+# Evaluation & Utilities
+jiwer>=3.0.0
+pyyaml>=6.0
+tqdm>=4.66.0
+tensorboard>=2.15.0

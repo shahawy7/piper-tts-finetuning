@@ -1,0 +1,44 @@
+# Experiment Template Configuration for Piper Arabic Fine-Tuning
+
+experiment:
+  id: "experiment_template"
+  name: "Arabic Piper Fine-Tuning Template"
+  description: "Template configuration for fine-tuning Piper ar_JO model"
+  date: "2026-07-31"
+
+model:
+  base_model_name: "ar_JO-kareem-medium"
+  base_checkpoint_url: "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/ar/ar_JO/kareem/medium/ar_JO-kareem-medium.onnx"
+  language: "ar_JO"
+  sample_rate: 22050
+  num_mels: 80
+  phoneme_type: "espeak"
+  phoneme_language: "ar"
+
+dataset:
+  hf_repo: "NightPrince/Arabic-professional-voice"
+  audio_format: "wav"
+  target_sample_rate: 22050
+  train_val_split: 0.95
+  seed: 42
+  text_column: "text"
+  audio_column: "audio"
+
+training:
+  batch_size: 16
+  learning_rate: 1.0e-4
+  epochs: 100
+  checkpoint_every_epochs: 5
+  save_top_k: 3
+  precision: 32
+  grad_clip_norm: 1.0
+  resume_from_checkpoint: null
+
+paths:
+  drive_root: "/content/drive/MyDrive/Arabic-Piper"
+  datasets_dir: "datasets"
+  processed_dir: "processed"
+  checkpoints_dir: "checkpoints"
+  tensorboard_dir: "tensorboard"
+  outputs_dir: "outputs"
+  metrics_dir: "metrics"

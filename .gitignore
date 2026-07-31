@@ -1,1 +1,43 @@
-Arabic_Piper_Finetuning_Plan.md
+# Python & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# Data & Datasets
+datasets/
+processed/
+raw_data/
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.csv
+!benchmark/benchmark_sentences.txt
+
+# Model Checkpoints & Outputs
+checkpoints/
+outputs/
+tensorboard/
+logs/
+metrics/
+*.ckpt
+*.onnx
+*.onnx.json
+*.pth
+*.pt
+
+# IDEs & System
+.vscode/
+.idea/
+.DS_Store
+*.log
