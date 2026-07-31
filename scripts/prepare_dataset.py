@@ -6,6 +6,7 @@ resamples audio to target rate (22050 Hz), and splits into train/validation sets
 """
 
 import argparse
+import io
 import logging
 import os
 import sys
@@ -32,14 +33,57 @@ def load_config(config_path: str) -> dict:
 
 def process_and_save_audio(audio_data, target_sr: int, output_wav_path: Path):
     """Resamples audio tensor/array to target sample rate and saves as mono 16-bit WAV."""
-    if isinstance(audio_data, dict):
-        array = audio_data.get("array")
-        orig_sr = audio_data.get("sampling_rate", target_sr)
-    else:
-        array, orig_sr = audio_data, target_sr
+    array = None
+    orig_sr = target_sr
 
-    if array is None:
-        raise ValueError("Invalid audio array.")
+    if isinstance(audio_data, dict):
+        orig_sr = audio_data.get("sampling_rate") or target_sr
+        
+        # Priority 1: Try reading raw bytes if available (avoids AudioDecoder issues)
+        if audio_data.get("bytes") is not None:
+            try:
+                bytes_data = audio_data["bytes"]
+                array, orig_sr = sf.read(io.BytesIO(bytes_data))
+            except Exception:
+                try:
+                    waveform_tensor, orig_sr = torchaudio.load(io.BytesIO(bytes_data))
+                    array = waveform_tensor.numpy()
+                except Exception:
+                    array = None
+
+        # Priority 2: Try reading from file path if available
+        if array is None and audio_data.get("path") is not None:
+            try:
+                audio_path = audio_data["path"]
+                if os.path.exists(audio_path):
+                    array, orig_sr = sf.read(audio_path)
+            except Exception:
+                array = None
+
+        # Priority 3: Try raw array / AudioDecoder conversion
+        if array is None and audio_data.get("array") is not None:
+            raw_array = audio_data["array"]
+            try:
+                if hasattr(raw_array, "get_array"):
+                    array = raw_array.get_array()
+                elif hasattr(raw_array, "to_numpy"):
+                    array = raw_array.to_numpy()
+                elif hasattr(raw_array, "decode"):
+                    array = raw_array.decode()
+                elif hasattr(raw_array, "array"):
+                    array = raw_array.array
+                else:
+                    array = np.asarray(raw_array)
+            except Exception:
+                array = None
+    else:
+        try:
+            array = np.asarray(audio_data)
+        except Exception:
+            array = None
+
+    if array is None or (isinstance(array, (np.ndarray, list)) and len(array) == 0):
+        raise ValueError(f"Could not extract audio array from audio data structure: {type(audio_data)}")
 
     waveform = torch.tensor(array, dtype=torch.float32)
     if waveform.ndim == 1:
