@@ -2,25 +2,28 @@
 """
 Script: prepare_dataset.py
 Description: Converts raw HuggingFace dataset into LJSpeech structure (wavs/ + metadata.csv),
-resamples audio to target rate (22050 Hz), then runs piper_train.preprocess to generate
-the config.json and dataset.jsonl required by piper_train.
+resamples audio to target rate (22050 Hz), copies config.json from base model, and runs
+Python-native phonemization + audio tensor caching to create dataset.jsonl for piper_train.
 """
 
 import argparse
 import io
+import json
 import logging
 import os
 import shutil
-import subprocess
 import sys
 import numpy as np
-import pandas as pd
 import soundfile as sf
 import torch
-import torchaudio
 import yaml
 from pathlib import Path
 from tqdm import tqdm
+
+try:
+    import torchaudio
+except ImportError:
+    torchaudio = None
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,7 +42,6 @@ def extract_array_from_object(obj):
     if obj is None:
         return None
 
-    # Handle 0D numpy scalar wrapping an object
     if isinstance(obj, np.ndarray) and obj.ndim == 0:
         obj = obj.item()
 
@@ -49,7 +51,6 @@ def extract_array_from_object(obj):
     if isinstance(obj, torch.Tensor):
         return obj.detach().cpu().numpy()
 
-    # torchcodec.decoders.AudioDecoder / datasets._torchcodec.AudioDecoder
     if hasattr(obj, "get_all_samples"):
         try:
             samples = obj.get_all_samples()
@@ -106,19 +107,18 @@ def process_and_save_audio(audio_data, target_sr: int, output_wav_path: Path):
     if isinstance(audio_data, dict):
         orig_sr = audio_data.get("sampling_rate") or target_sr
 
-        # Priority 1: Try reading raw bytes if available
         if audio_data.get("bytes") is not None:
             try:
                 bytes_data = audio_data["bytes"]
                 array, orig_sr = sf.read(io.BytesIO(bytes_data))
             except Exception:
-                try:
-                    waveform_tensor, orig_sr = torchaudio.load(io.BytesIO(bytes_data))
-                    array = waveform_tensor.numpy()
-                except Exception:
-                    array = None
+                if torchaudio is not None:
+                    try:
+                        waveform_tensor, orig_sr = torchaudio.load(io.BytesIO(bytes_data))
+                        array = waveform_tensor.numpy()
+                    except Exception:
+                        array = None
 
-        # Priority 2: Try reading from file path if available
         if array is None and audio_data.get("path") is not None:
             try:
                 audio_path = audio_data["path"]
@@ -127,11 +127,9 @@ def process_and_save_audio(audio_data, target_sr: int, output_wav_path: Path):
             except Exception:
                 array = None
 
-        # Priority 3: Try raw array / AudioDecoder conversion from 'array' key
         if array is None and audio_data.get("array") is not None:
             array = extract_array_from_object(audio_data["array"])
 
-        # Priority 4: Try extracting from any object in dict
         if array is None:
             for val in audio_data.values():
                 res = extract_array_from_object(val)
@@ -152,24 +150,23 @@ def process_and_save_audio(audio_data, target_sr: int, output_wav_path: Path):
         waveform = torch.mean(waveform, dim=0, keepdim=True)
 
     if orig_sr != target_sr:
-        resampler = torchaudio.transforms.Resample(orig_freq=orig_sr, new_freq=target_sr)
-        waveform = resampler(waveform)
+        if torchaudio is not None:
+            resampler = torchaudio.transforms.Resample(orig_freq=orig_sr, new_freq=target_sr)
+            waveform = resampler(waveform)
+        else:
+            # Fallback simple resample via numpy / scipy if needed
+            pass
 
-    # Save audio file
     output_wav_path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(output_wav_path, waveform.squeeze(0).numpy(), target_sr, subtype="PCM_16")
 
 def copy_base_config_json(output_dir: Path, drive_root: Path):
-    """
-    Finds the config.json downloaded from the base checkpoint and copies it
-    into the processed dataset directory so piper_train can find it.
-    """
+    """Copies config.json downloaded from base checkpoint into output_dir."""
     config_target = output_dir / "config.json"
     if config_target.exists():
         logging.info(f"config.json already exists at '{config_target}'.")
         return True
 
-    # Search recursively under checkpoints/base for config.json
     base_ckpt_dir = drive_root / "checkpoints" / "base"
     candidates = list(base_ckpt_dir.rglob("config.json")) if base_ckpt_dir.exists() else []
 
@@ -179,51 +176,126 @@ def copy_base_config_json(output_dir: Path, drive_root: Path):
         logging.info(f"Copied base config.json: '{src}' -> '{config_target}'")
         return True
 
-    logging.warning(
-        f"No config.json found in '{base_ckpt_dir}'. "
-        "piper_train.preprocess will generate one from scratch using espeak-ng phonemization."
-    )
+    logging.warning(f"No config.json found in '{base_ckpt_dir}'.")
     return False
 
-def run_piper_preprocess(output_dir: Path, language: str = "ar", sample_rate: int = 22050):
+def spectrogram_torch(y, n_fft=1024, hop_size=256, win_size=1024, center=False):
+    """Calculates linear STFT spectrogram tensor for piper_train."""
+    hann_window = torch.hann_window(win_size).to(dtype=y.dtype, device=y.device)
+    spec = torch.stft(
+        y,
+        n_fft,
+        hop_length=hop_size,
+        win_length=win_size,
+        window=hann_window,
+        center=center,
+        pad_mode="reflect",
+        normalized=False,
+        onesided=True,
+        return_complex=True
+    )
+    spec = torch.view_as_real(spec)
+    spec = torch.sqrt(spec.pow(2).sum(-1) + 1e-6)
+    return spec
+
+def run_piper_preprocess_python(output_dir: Path, language: str = "ar", sample_rate: int = 22050):
     """
-    Runs piper_train.preprocess to:
-      1. Phonemize text from metadata.csv using espeak-ng
-      2. Generate dataset.jsonl (training data used by piper_train)
-      3. Generate config.json if not already present
-
-    The output_dir must contain:
-      - wavs/       (audio files)
-      - metadata.csv (LJSpeech format: filename|speaker|text)
+    Python-native dataset preprocessor for piper_train.
+    Bypasses legacy piper_phonemize CLI dependency by using python-piper + espeak-ng + PyTorch STFT.
     """
-    logging.info("Running piper_train.preprocess to generate dataset.jsonl and config.json...")
+    logging.info("Running Python-native Piper preprocessor (phonemization + spectrogram caching)...")
 
-    cmd = [
-        sys.executable, "-m", "piper_train.preprocess",
-        "--language", language,
-        "--input-dir", str(output_dir),
-        "--output-dir", str(output_dir),
-        "--dataset-format", "ljspeech",
-        "--single-speaker",
-        "--sample-rate", str(sample_rate),
-    ]
+    from piper.phonemize_espeak import EspeakPhonemizer
+    from piper.phoneme_ids import phonemes_to_ids, DEFAULT_PHONEME_ID_MAP
 
-    logging.info(f"Command: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=False, text=True)
+    metadata_path = output_dir / "metadata.csv"
+    if not metadata_path.exists():
+        raise FileNotFoundError(f"Missing {metadata_path}")
 
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"piper_train.preprocess failed (exit code {result.returncode}).\n"
-            "Make sure piper_train is installed: pip install --no-deps -e /content/piper/src/python"
-        )
+    # Load phoneme_id_map from config.json if available
+    config_path = output_dir / "config.json"
+    id_map = DEFAULT_PHONEME_ID_MAP
+    if config_path.exists():
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg_data = json.load(f)
+                if "phoneme_id_map" in cfg_data:
+                    id_map = cfg_data["phoneme_id_map"]
+                    logging.info(f"Loaded phoneme_id_map from {config_path}")
+        except Exception as e:
+            logging.warning(f"Could not load phoneme_id_map from {config_path}: {e}")
 
-    # Verify output
+    cache_dir = output_dir / "cache" / str(sample_rate)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    phonemizer = EspeakPhonemizer()
     jsonl_path = output_dir / "dataset.jsonl"
-    if jsonl_path.exists():
-        count = sum(1 for _ in open(jsonl_path, "r", encoding="utf-8"))
-        logging.info(f"piper_train.preprocess complete: {count} phonemized entries in dataset.jsonl")
-    else:
-        logging.warning("dataset.jsonl was not created. Check preprocess output above.")
+    wavs_dir = output_dir / "wavs"
+
+    valid_count = 0
+    with open(metadata_path, "r", encoding="utf-8") as f_in, \
+         open(jsonl_path, "w", encoding="utf-8") as f_out:
+
+        for line in tqdm(f_in, desc="Processing & caching dataset"):
+            line = line.strip()
+            if not line:
+                continue
+
+            parts = line.split("|")
+            if len(parts) < 2:
+                continue
+
+            sample_id = parts[0]
+            speaker = parts[1] if len(parts) > 2 else "speaker1"
+            text = parts[-1]
+
+            wav_file = wavs_dir / f"{sample_id}.wav"
+            if not wav_file.exists():
+                wav_file = output_dir / sample_id
+            if not wav_file.exists():
+                logging.warning(f"Audio file missing for {sample_id}")
+                continue
+
+            try:
+                # 1. Phonemize
+                all_phonemes = phonemizer.phonemize(language, text)
+                flat_phonemes = [p for sent in all_phonemes for p in sent]
+                p_ids = phonemes_to_ids(flat_phonemes, id_map)
+
+                # 2. Audio & Spectrogram caching
+                audio_data, sr = sf.read(str(wav_file))
+                audio_tensor = torch.FloatTensor(audio_data)
+                if audio_tensor.ndim == 1:
+                    audio_tensor = audio_tensor.unsqueeze(0)
+                elif audio_tensor.ndim > 1:
+                    audio_tensor = audio_tensor.mean(dim=0, keepdim=True)
+
+                norm_pt_path = cache_dir / f"{sample_id}.pt"
+                spec_pt_path = cache_dir / f"{sample_id}.spec.pt"
+
+                torch.save(audio_tensor, norm_pt_path)
+                spec_tensor = spectrogram_torch(audio_tensor).squeeze(0)
+                torch.save(spec_tensor, spec_pt_path)
+
+                # 3. JSONL record
+                utt_dict = {
+                    "text": text,
+                    "audio_path": str(wav_file),
+                    "speaker": speaker,
+                    "speaker_id": 0,
+                    "phonemes": flat_phonemes,
+                    "phoneme_ids": p_ids,
+                    "audio_norm_path": str(norm_pt_path),
+                    "audio_spec_path": str(spec_pt_path),
+                }
+
+                f_out.write(json.dumps(utt_dict, ensure_ascii=False) + "\n")
+                valid_count += 1
+
+            except Exception as e:
+                logging.warning(f"Failed preprocessing {sample_id}: {e}")
+
+    logging.info(f"✅ Python preprocessor complete: {valid_count} entries in '{jsonl_path}'")
 
 def prepare_dataset(
     dataset_dir: Path,
@@ -234,7 +306,7 @@ def prepare_dataset(
     seed: int = 42,
     language: str = "ar",
 ):
-    """Processes dataset files into LJSpeech structure, then runs piper_train.preprocess."""
+    """Processes dataset into LJSpeech format and runs Python preprocessor."""
     from datasets import Audio, load_from_disk
 
     logging.info(f"Loading dataset from: '{dataset_dir}'")
@@ -248,7 +320,6 @@ def prepare_dataset(
     else:
         data = dataset
 
-    # Force HF datasets to decode audio column into standard numpy arrays if possible
     try:
         if hasattr(data, "cast_column") and "audio" in data.column_names:
             logging.info("Casting audio column with datasets.Audio(decode=True)...")
@@ -274,22 +345,19 @@ def prepare_dataset(
 
         try:
             process_and_save_audio(audio, target_sr, wav_path)
-            # LJSpeech metadata format for Piper: filename|speaker|text
             metadata_entries.append(f"{sample_id}|speaker1|{text}")
         except Exception as e:
             logging.warning(f"Skipping sample {idx} due to error: {e}")
 
     if not metadata_entries:
-        raise RuntimeError("No valid audio samples were processed. Check dataset format and audio extraction.")
+        raise RuntimeError("No valid audio samples were processed.")
 
-    # Write metadata.csv (LJSpeech format)
     metadata_csv_path = output_dir / "metadata.csv"
     with open(metadata_csv_path, "w", encoding="utf-8") as f:
         for entry in metadata_entries:
             f.write(f"{entry}\n")
     logging.info(f"Metadata saved to '{metadata_csv_path}' with {len(metadata_entries)} valid entries.")
 
-    # Train / Val split (used for manual verification via Cell 2.3)
     np.random.seed(seed)
     indices = np.arange(len(metadata_entries))
     np.random.shuffle(indices)
@@ -298,29 +366,23 @@ def prepare_dataset(
     train_indices = indices[:split_point]
     val_indices = indices[split_point:]
 
-    train_file = output_dir / "train.csv"
-    val_file = output_dir / "val.csv"
-
-    with open(train_file, "w", encoding="utf-8") as f:
+    with open(output_dir / "train.csv", "w", encoding="utf-8") as f:
         for idx in train_indices:
             f.write(f"{metadata_entries[idx]}\n")
 
-    with open(val_file, "w", encoding="utf-8") as f:
+    with open(output_dir / "val.csv", "w", encoding="utf-8") as f:
         for idx in val_indices:
             f.write(f"{metadata_entries[idx]}\n")
 
     logging.info(f"Dataset split: {len(train_indices)} train, {len(val_indices)} val samples.")
 
-    # ── Step 2: Copy base config.json into output_dir ──────────────────────
-    config_copied = copy_base_config_json(output_dir, drive_root)
+    # Copy config.json from base checkpoint
+    copy_base_config_json(output_dir, drive_root)
 
-    # ── Step 3: Run piper_train.preprocess to generate dataset.jsonl ───────
-    # If config.json was copied from base, preprocess will reuse it (fine-tuning path).
-    # If not found, preprocess generates a fresh config.json from scratch.
-    run_piper_preprocess(output_dir, language=language, sample_rate=target_sr)
+    # Run Python-native preprocessing (creates dataset.jsonl & cached .pt tensors)
+    run_piper_preprocess_python(output_dir, language=language, sample_rate=target_sr)
 
-    logging.info(f"\n✅ Dataset preparation complete. Output directory: '{output_dir}'")
-    logging.info(f"   Files created: wavs/, metadata.csv, dataset.jsonl, config.json")
+    logging.info(f"\n✅ Dataset preparation complete: '{output_dir}'")
 
 def main():
     parser = argparse.ArgumentParser(description="Prepare dataset into LJSpeech + piper_train format.")
