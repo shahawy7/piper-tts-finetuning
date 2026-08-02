@@ -282,7 +282,7 @@ def run_piper_preprocess_python(output_dir: Path, language: str = "ar", sample_r
                     "text": text,
                     "audio_path": str(wav_file),
                     "speaker": speaker,
-                    "speaker_id": 0,
+                    "speaker_id": None,
                     "phonemes": flat_phonemes,
                     "phoneme_ids": p_ids,
                     "audio_norm_path": str(norm_pt_path),
