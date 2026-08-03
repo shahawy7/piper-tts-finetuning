@@ -16,6 +16,8 @@ piper-tts>=1.6.0; platform_system != "Windows"
 # Modeling & Inference
 torch>=2.1.0
 pytorch-lightning~=1.9.5
+onnx>=1.15.0
+onnxscript>=0.1.0
 onnxruntime>=1.16.0
 
 # Evaluation & Utilities

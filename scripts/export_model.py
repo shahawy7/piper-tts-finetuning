@@ -12,8 +12,16 @@ import pathlib
 import subprocess
 import sys
 import torch
-import yaml
 from pathlib import Path
+
+# Auto-install onnxscript if required by PyTorch 2.6 ONNX exporter
+try:
+    import onnxscript
+except ImportError:
+    try:
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "onnxscript", "onnx"], check=True)
+    except Exception:
+        pass
 
 # PyTorch 2.6 safe_globals fix
 try:
@@ -47,9 +55,10 @@ def export_ckpt_to_onnx(ckpt_path: Path, output_onnx_path: Path, config_json_pat
         res = subprocess.run(cmd, capture_output=True, text=True, check=True)
         logging.info(f"Export output: {res.stdout}")
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        logging.warning(f"Note on piper_train export_onnx module execution: {e}")
+        logging.error(f"Error during ONNX export: {e}")
         if hasattr(e, "stderr") and e.stderr:
-            logging.warning(f"Error details: {e.stderr}")
+            logging.error(f"Error details: {e.stderr}")
+        raise RuntimeError(f"ONNX export failed: {e}") from e
 
     # Locate source config.json if not provided
     if config_json_path is None or not config_json_path.exists():
