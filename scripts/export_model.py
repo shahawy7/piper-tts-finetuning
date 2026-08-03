@@ -8,10 +8,18 @@ import argparse
 import json
 import logging
 import os
+import pathlib
 import subprocess
 import sys
+import torch
 import yaml
 from pathlib import Path
+
+# PyTorch 2.6 safe_globals fix
+try:
+    torch.serialization.add_safe_globals([pathlib.PosixPath, pathlib.WindowsPath])
+except Exception:
+    pass
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,14 +33,14 @@ def export_ckpt_to_onnx(ckpt_path: Path, output_onnx_path: Path, config_json_pat
         raise FileNotFoundError(f"Checkpoint file '{ckpt_path}' does not exist.")
 
     output_onnx_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     logging.info(f"Exporting PyTorch checkpoint '{ckpt_path}' to ONNX '{output_onnx_path}'...")
-    
+
     cmd = [
         sys.executable,
-        "-m", "piper_train.export_onnx",
-        str(ckpt_path),
-        str(output_onnx_path)
+        "-c",
+        f"import pathlib, torch; torch.serialization.add_safe_globals([pathlib.PosixPath, pathlib.WindowsPath]); "
+        f"from piper_train.export_onnx import main; import sys; sys.argv=['export_onnx', '{ckpt_path}', '{output_onnx_path}']; main()"
     ]
 
     try:
@@ -40,15 +48,27 @@ def export_ckpt_to_onnx(ckpt_path: Path, output_onnx_path: Path, config_json_pat
         logging.info(f"Export output: {res.stdout}")
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         logging.warning(f"Note on piper_train export_onnx module execution: {e}")
-        logging.info("Writing target ONNX configuration metadata...")
+        if hasattr(e, "stderr") and e.stderr:
+            logging.warning(f"Error details: {e.stderr}")
+
+    # Locate source config.json if not provided
+    if config_json_path is None or not config_json_path.exists():
+        candidate = ckpt_path.parent.parent.parent / "processed" / "experiment001" / "config.json"
+        if candidate.exists():
+            config_json_path = candidate
+        else:
+            candidate_base = ckpt_path.parent.parent / "base" / "config.json"
+            if candidate_base.exists():
+                config_json_path = candidate_base
 
     # Ensure matching .onnx.json metadata config exists
     target_json_path = Path(str(output_onnx_path) + ".json")
     if config_json_path and config_json_path.exists():
+        logging.info(f"Using source config JSON: '{config_json_path}'")
         with open(config_json_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
     else:
-        # Standard Piper ar_JO config metadata fallback structure
+        logging.info("Writing standard fallback ONNX configuration metadata...")
         meta = {
             "dataset": "Arabic-professional-voice",
             "audio": {
@@ -71,7 +91,7 @@ def export_ckpt_to_onnx(ckpt_path: Path, output_onnx_path: Path, config_json_pat
     with open(target_json_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
-    logging.info(f"Export complete. Model: '{output_onnx_path}', Config: '{target_json_path}'")
+    logging.info(f"✅ Export complete. Model: '{output_onnx_path}', Config: '{target_json_path}'")
 
 def main():
     parser = argparse.ArgumentParser(description="Export PyTorch Lightning checkpoint to ONNX model.")
