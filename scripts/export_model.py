@@ -60,15 +60,18 @@ def export_ckpt_to_onnx(ckpt_path: Path, output_onnx_path: Path, config_json_pat
             logging.error(f"Error details: {e.stderr}")
         raise RuntimeError(f"ONNX export failed: {e}") from e
 
-    # Locate source config.json if not provided
+    # Locate source config.json containing phoneme_id_map if not explicitly provided
     if config_json_path is None or not config_json_path.exists():
-        candidate = ckpt_path.parent.parent.parent / "processed" / "experiment001" / "config.json"
-        if candidate.exists():
-            config_json_path = candidate
-        else:
-            candidate_base = ckpt_path.parent.parent / "base" / "config.json"
-            if candidate_base.exists():
-                config_json_path = candidate_base
+        candidates = [
+            Path("/content/drive/MyDrive/Arabic-Piper/processed/experiment001/config.json"),
+            Path("/content/drive/MyDrive/Arabic-Piper/checkpoints/base/ar/ar_JO/kareem/medium/config.json"),
+            Path("/content/drive/MyDrive/Arabic-Piper/checkpoints/base/config.json"),
+            ckpt_path.parent.parent.parent.parent / "processed" / "experiment001" / "config.json",
+        ]
+        for cand in candidates:
+            if cand and cand.exists():
+                config_json_path = cand
+                break
 
     # Ensure matching .onnx.json metadata config exists
     target_json_path = Path(str(output_onnx_path) + ".json")
@@ -77,7 +80,7 @@ def export_ckpt_to_onnx(ckpt_path: Path, output_onnx_path: Path, config_json_pat
         with open(config_json_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
     else:
-        logging.info("Writing standard fallback ONNX configuration metadata...")
+        logging.warning("Source config.json not found! Writing minimal fallback ONNX configuration metadata...")
         meta = {
             "dataset": "Arabic-professional-voice",
             "audio": {
