@@ -46,14 +46,18 @@ def run_command_in_pipeline(cmd: list, cwd: str = None) -> subprocess.CompletedP
 def ensure_piper_train_installed():
     """Checks if piper_train and compiling dependencies are installed. If not, installs/patches them."""
     # Always ensure setuptools (pkg_resources) is installed since PyTorch Lightning requires it
+    logging.info("Ensuring setuptools (pkg_resources) is installed in the virtual environment...")
+    res = run_command_in_pipeline([sys.executable, "-m", "pip", "install", "setuptools"])
+    if res.returncode != 0:
+        logging.error(f"Failed to install setuptools: {res.stderr}")
+        sys.exit(res.returncode)
+
     try:
         import pkg_resources
-    except ImportError:
-        logging.info("Installing setuptools (pkg_resources) to satisfy PyTorch Lightning requirements...")
-        res = run_command_in_pipeline([sys.executable, "-m", "pip", "install", "-q", "setuptools"])
-        if res.returncode != 0:
-            logging.error(f"Failed to install setuptools: {res.stderr}")
-            sys.exit(res.returncode)
+        logging.info(f"✓ pkg_resources is available at: {pkg_resources.__file__}")
+    except ImportError as e:
+        logging.error(f"❌ Failed to import pkg_resources even after setuptools installation: {e}")
+        sys.exit(1)
 
     try:
         import piper_train
