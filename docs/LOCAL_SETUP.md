@@ -46,30 +46,38 @@ pip install -r requirements.txt
 
 ---
 
-## 4. Directory Layout
+## 4. 🌐 SSH Remote Execution (Run in Background)
 
-When running locally, data, checkpoints, and models are stored relative to the project root directory:
+When connecting to your workstation via SSH, you can launch fine-tuning in the background and safely close your SSH session.
 
-```text
-piper-tts-finetuning/
-├── configs/                  # YAML configurations (experiment001.yaml)
-├── datasets/                 # Raw HuggingFace dataset download
-│   └── experiment001/
-├── processed/                # LJSpeech WAVs, metadata.csv, dataset.jsonl, cached .pt tensors
-│   └── experiment001/
-├── checkpoints/              # Base model & PyTorch Lightning fine-tuning checkpoints
-│   ├── base/
-│   └── experiment001/
-├── outputs/                  # Exported ONNX models and benchmark audio outputs
-│   └── experiment001/
-└── scripts/                  # Command line scripts
+### 4.1 Launch Background Training
+```bash
+./scripts/start_training.sh --epochs 50 --batch-size 32
+```
+This runs `run_local_pipeline.py` in the background with `nohup`, saving logs to `logs/training_YYYYMMDD_HHMMSS.log` and tracking process ID in `logs/training.pid`. **You can now safely exit your SSH connection!**
+
+### 4.2 Check Status & GPU Utilization
+Reconnect via SSH at any time to inspect status and GPU usage:
+```bash
+./scripts/status_training.sh
+```
+
+### 4.3 Live Tail Logs
+```bash
+tail -f logs/latest.log
+```
+
+### 4.4 Graceful Stop & Final Checkpoint Save
+To stop training early and save the latest checkpoint cleanly:
+```bash
+./scripts/stop_training.sh
 ```
 
 ---
 
-## 5. Running via Command Line (Automated Pipeline)
+## 5. Foreground Command Line Execution
 
-You can launch the complete end-to-end pipeline with one command:
+If you prefer to run synchronously in an active terminal session:
 
 ```bash
 python scripts/run_local_pipeline.py --config configs/experiment001.yaml --epochs 50 --batch-size 32
@@ -81,11 +89,11 @@ python scripts/run_local_pipeline.py --config configs/experiment001.yaml --epoch
 - `--precision 32`: Precision mode (`32`, `16-mixed`, `bf16-mixed`).
 - `--devices 1`: Number of GPUs or specific GPU ID.
 - `--skip-download`: Skip dataset download if already downloaded.
-- `--skip-prepare`: Skip dataset preprocessing if `dataset.jsonl` is ready.
+- `--skip-prepare`: Skip dataset preparation if `dataset.jsonl` is ready.
 
 ---
 
-## 6. Step-by-Step Command Line Execution
+## 6. Step-by-Step Manual Execution
 
 Alternatively, you can run each stage individually:
 
@@ -128,13 +136,3 @@ python scripts/benchmark.py \
     --sentences benchmark/benchmark_sentences.txt \
     --output-dir outputs/finetuned_benchmark
 ```
-
----
-
-## 7. Running via Jupyter Notebook
-
-Launch JupyterLab or VS Code Notebook:
-```bash
-jupyter lab notebooks/local_piper_finetuning.ipynb
-```
-Run cells top-to-bottom for interactive visualization and audio playback!

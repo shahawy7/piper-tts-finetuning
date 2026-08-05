@@ -2,22 +2,37 @@
 """
 Script: run_local_pipeline.py
 Description: End-to-end local workstation execution pipeline for Arabic Piper TTS fine-tuning.
-Supports local GPU training (e.g., RTX 5090) without Google Colab / Drive dependencies.
+Supports local GPU training (e.g., RTX 5090) and background SSH daemon execution.
 """
 
 import argparse
 import logging
 import os
+import signal
 import subprocess
 import sys
 import yaml
 from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+def setup_logging(log_file_path: Path = None):
+    handlers = [logging.StreamHandler(sys.stdout)]
+    if log_file_path:
+        log_file_path.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_file_path, encoding="utf-8"))
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=handlers,
+        force=True
+    )
+
+def handle_signal(sig, frame):
+    logging.info(f"\n⚠️  Received signal {sig}. Interrupted cleanly by user or system.")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, handle_signal)
+signal.signal(signal.SIGTERM, handle_signal)
 
 def load_config(config_path: str) -> dict:
     if os.path.exists(config_path):
@@ -43,9 +58,15 @@ def main():
     parser.add_argument("--batch-size", type=int, default=None, help="Batch size per GPU.")
     parser.add_argument("--precision", type=str, default="32", choices=["32", "16-mixed", "bf16-mixed"], help="PyTorch Lightning precision.")
     parser.add_argument("--devices", type=str, default="1", help="Number of GPUs or GPU IDs to use (e.g. 1 or '0,').")
+    parser.add_argument("--log-file", type=str, default=None, help="Path to file for logging execution output.")
     parser.add_argument("--skip-download", action="store_true", help="Skip dataset download step if already present.")
     parser.add_argument("--skip-prepare", action="store_true", help="Skip dataset preparation step if already present.")
     args = parser.parse_args()
+
+    if args.log_file:
+        setup_logging(Path(args.log_file))
+    else:
+        setup_logging()
 
     cfg = load_config(args.config)
     data_root = Path(args.data_root)
