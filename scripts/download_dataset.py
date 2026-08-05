@@ -71,20 +71,21 @@ def main():
     parser = argparse.ArgumentParser(description="Download dataset & base model for Arabic Piper fine-tuning.")
     parser.add_argument("--config", type=str, default="configs/experiment001.yaml", help="Path to experiment config YAML.")
     parser.add_argument("--dataset-repo", type=str, default=None, help="HF dataset repository ID.")
-    parser.add_argument("--drive-root", type=str, default=None, help="Root directory for storing data.")
+    parser.add_argument("--data-root", type=str, default=None, help="Root directory for storing data.")
+    parser.add_argument("--drive-root", type=str, default=None, help="Legacy alias for --data-root.")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
     
-    drive_root = args.drive_root or cfg.get("paths", {}).get("drive_root", ".")
+    data_root = args.data_root or args.drive_root or cfg.get("paths", {}).get("data_root") or cfg.get("paths", {}).get("drive_root", ".")
     datasets_subdir = cfg.get("paths", {}).get("datasets_dir", "datasets")
     dataset_repo = args.dataset_repo or cfg.get("dataset", {}).get("hf_repo", "NightPrince/Arabic-professional-voice")
     
     checkpoint_repo = cfg.get("model", {}).get("base_checkpoint_hf_repo", "rhasspy/piper-checkpoints")
     checkpoint_filename = cfg.get("model", {}).get("base_checkpoint_filename", "ar/ar_JO/kareem/medium/epoch=5079-step=1682020.ckpt")
     
-    target_dataset_dir = Path(drive_root) / datasets_subdir
-    target_ckpt_dir = Path(drive_root) / "checkpoints" / "base"
+    target_dataset_dir = Path(data_root) / datasets_subdir
+    target_ckpt_dir = Path(data_root) / "checkpoints" / "base"
     
     # Run downloads
     try:

@@ -1,10 +1,10 @@
-# Experiment 001 Configuration: Arabic Professional Voice Fine-Tuning
+# Experiment 001 Configuration: Arabic Professional Voice Fine-Tuning (Local Workstation)
 
 experiment:
   id: "experiment001"
   name: "Piper ar_JO Fine-Tuning - Arabic Professional Voice"
-  description: "Fine-tune ar_JO-kareem-medium using NightPrince/Arabic-professional-voice dataset"
-  date: "2026-07-31"
+  description: "Fine-tune ar_JO-kareem-medium using NightPrince/Arabic-professional-voice dataset on local GPU workstation"
+  date: "2026-08-05"
 
 model:
   base_model_name: "ar_JO-kareem-medium"
@@ -17,7 +17,6 @@ model:
   phoneme_type: "espeak"
   phoneme_language: "ar"
 
-
 dataset:
   hf_repo: "NightPrince/Arabic-professional-voice"
   audio_format: "wav"
@@ -28,17 +27,17 @@ dataset:
   audio_column: "audio"
 
 training:
-  batch_size: 16
+  batch_size: 32            # Higher batch size recommended for RTX 5090 / 32GB VRAM
   learning_rate: 1.0e-4
   epochs: 50
   checkpoint_every_epochs: 5
   save_top_k: 3
-  precision: 32
+  precision: "32"           # '32', '16-mixed', or 'bf16-mixed'
   grad_clip_norm: 1.0
-  resume_from_checkpoint: "auto"  # Detects latest checkpoint in checkpoints_dir
+  resume_from_checkpoint: "auto"
 
 paths:
-  drive_root: "/content/drive/MyDrive/Arabic-Piper"
+  data_root: "."            # Local project root directory
   datasets_dir: "datasets/experiment001"
   processed_dir: "processed/experiment001"
   checkpoints_dir: "checkpoints/experiment001"

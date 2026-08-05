@@ -1,10 +1,10 @@
-# Experiment Template Configuration for Piper Arabic Fine-Tuning
+# Experiment Template Configuration for Piper Arabic Fine-Tuning (Local Workstation)
 
 experiment:
   id: "experiment_template"
   name: "Arabic Piper Fine-Tuning Template"
-  description: "Template configuration for fine-tuning Piper ar_JO model"
-  date: "2026-07-31"
+  description: "Template configuration for fine-tuning Piper ar_JO model on local GPU workstation"
+  date: "2026-08-05"
 
 model:
   base_model_name: "ar_JO-kareem-medium"
@@ -17,7 +17,6 @@ model:
   phoneme_type: "espeak"
   phoneme_language: "ar"
 
-
 dataset:
   hf_repo: "NightPrince/Arabic-professional-voice"
   audio_format: "wav"
@@ -28,17 +27,17 @@ dataset:
   audio_column: "audio"
 
 training:
-  batch_size: 16
+  batch_size: 32            # Higher batch size for RTX 5090
   learning_rate: 1.0e-4
   epochs: 100
   checkpoint_every_epochs: 5
   save_top_k: 3
-  precision: 32
+  precision: "32"           # '32', '16-mixed', or 'bf16-mixed'
   grad_clip_norm: 1.0
   resume_from_checkpoint: null
 
 paths:
-  drive_root: "/content/drive/MyDrive/Arabic-Piper"
+  data_root: "."            # Local project root directory
   datasets_dir: "datasets"
   processed_dir: "processed"
   checkpoints_dir: "checkpoints"

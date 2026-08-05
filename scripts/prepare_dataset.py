@@ -154,20 +154,19 @@ def process_and_save_audio(audio_data, target_sr: int, output_wav_path: Path):
             resampler = torchaudio.transforms.Resample(orig_freq=orig_sr, new_freq=target_sr)
             waveform = resampler(waveform)
         else:
-            # Fallback simple resample via numpy / scipy if needed
             pass
 
     output_wav_path.parent.mkdir(parents=True, exist_ok=True)
     sf.write(output_wav_path, waveform.squeeze(0).numpy(), target_sr, subtype="PCM_16")
 
-def copy_base_config_json(output_dir: Path, drive_root: Path):
+def copy_base_config_json(output_dir: Path, data_root: Path):
     """Copies config.json downloaded from base checkpoint into output_dir."""
     config_target = output_dir / "config.json"
     if config_target.exists():
         logging.info(f"config.json already exists at '{config_target}'.")
         return True
 
-    base_ckpt_dir = drive_root / "checkpoints" / "base"
+    base_ckpt_dir = data_root / "checkpoints" / "base"
     candidates = list(base_ckpt_dir.rglob("config.json")) if base_ckpt_dir.exists() else []
 
     if candidates:
@@ -300,7 +299,7 @@ def run_piper_preprocess_python(output_dir: Path, language: str = "ar", sample_r
 def prepare_dataset(
     dataset_dir: Path,
     output_dir: Path,
-    drive_root: Path,
+    data_root: Path,
     target_sr: int = 22050,
     train_ratio: float = 0.95,
     seed: int = 42,
@@ -377,7 +376,7 @@ def prepare_dataset(
     logging.info(f"Dataset split: {len(train_indices)} train, {len(val_indices)} val samples.")
 
     # Copy config.json from base checkpoint
-    copy_base_config_json(output_dir, drive_root)
+    copy_base_config_json(output_dir, data_root)
 
     # Run Python-native preprocessing (creates dataset.jsonl & cached .pt tensors)
     run_piper_preprocess_python(output_dir, language=language, sample_rate=target_sr)
@@ -389,13 +388,14 @@ def main():
     parser.add_argument("--config", type=str, default="configs/experiment001.yaml", help="Path to YAML config.")
     parser.add_argument("--dataset-dir", type=str, default=None, help="Input raw HF dataset directory.")
     parser.add_argument("--output-dir", type=str, default=None, help="Output processed dataset directory.")
+    parser.add_argument("--data-root", type=str, default=None, help="Root data directory.")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    drive_root = Path(cfg.get("paths", {}).get("drive_root", "."))
+    data_root = Path(args.data_root or cfg.get("paths", {}).get("data_root") or cfg.get("paths", {}).get("drive_root", "."))
 
-    dataset_dir = Path(args.dataset_dir or (drive_root / cfg.get("paths", {}).get("datasets_dir", "datasets")))
-    output_dir  = Path(args.output_dir  or (drive_root / cfg.get("paths", {}).get("processed_dir",  "processed")))
+    dataset_dir = Path(args.dataset_dir or (data_root / cfg.get("paths", {}).get("datasets_dir", "datasets")))
+    output_dir  = Path(args.output_dir  or (data_root / cfg.get("paths", {}).get("processed_dir",  "processed")))
 
     target_sr   = cfg.get("dataset", {}).get("target_sample_rate", 22050)
     train_ratio = cfg.get("dataset", {}).get("train_val_split", 0.95)
@@ -405,7 +405,7 @@ def main():
     prepare_dataset(
         dataset_dir,
         output_dir,
-        drive_root=drive_root,
+        data_root=data_root,
         target_sr=target_sr,
         train_ratio=train_ratio,
         seed=seed,
