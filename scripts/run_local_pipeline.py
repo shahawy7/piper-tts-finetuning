@@ -44,13 +44,25 @@ def run_command_in_pipeline(cmd: list, cwd: str = None) -> subprocess.CompletedP
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
 
 def ensure_piper_train_installed():
-    """Checks if piper_train is installed. If not, clones, installs, patches, and compiles it."""
+    """Checks if piper_train and compiling dependencies are installed. If not, installs/patches them."""
+    # Always ensure setuptools (pkg_resources) is installed since PyTorch Lightning requires it
+    try:
+        import pkg_resources
+    except ImportError:
+        logging.info("Installing setuptools (pkg_resources) to satisfy PyTorch Lightning requirements...")
+        res = run_command_in_pipeline([sys.executable, "-m", "pip", "install", "-q", "setuptools"])
+        if res.returncode != 0:
+            logging.error(f"Failed to install setuptools: {res.stderr}")
+            sys.exit(res.returncode)
+
     try:
         import piper_train
-        logging.info("✓ piper_train module is already installed.")
+        # Verify compiled Cython extension monotonic_align.core is importable
+        from piper_train.vits.monotonic_align import core
+        logging.info("✓ piper_train module and monotonic_align compiled extension are ready.")
         return
     except ImportError:
-        logging.info("🔍 piper_train module not found. Initiating automatic local installation...")
+        logging.info("🔍 piper_train or compiled monotonic_align not found. Initiating automatic local installation...")
 
     project_root = Path(__file__).resolve().parent.parent
     piper_src = project_root / "piper_src"
