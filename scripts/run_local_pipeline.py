@@ -47,7 +47,7 @@ def ensure_piper_train_installed():
     """Checks if piper_train and compiling dependencies are installed. If not, installs/patches them."""
     # Always ensure setuptools (pkg_resources) is installed since PyTorch Lightning requires it
     logging.info("Ensuring setuptools (pkg_resources) is installed in the virtual environment...")
-    res = run_command_in_pipeline([sys.executable, "-m", "pip", "install", "setuptools"])
+    res = run_command_in_pipeline([sys.executable, "-m", "pip", "install", "setuptools<=80.10.2"])
     if res.returncode != 0:
         logging.error(f"Failed to install setuptools: {res.stderr}")
         sys.exit(res.returncode)
@@ -137,9 +137,8 @@ def ensure_piper_train_installed():
     out_subdir = mono_dir / "monotonic_align"
     out_subdir.mkdir(parents=True, exist_ok=True)
 
-    # Make sure cython and setuptools are installed in this environment
-    logging.info("Ensuring cython>=3.0.0 and setuptools are installed...")
-    install_res = run_command_in_pipeline([sys.executable, "-m", "pip", "install", "-q", "cython>=3.0.0", "setuptools"])
+    logging.info("Ensuring cython>=3.0.0 and setuptools<=80.10.2 are installed...")
+    install_res = run_command_in_pipeline([sys.executable, "-m", "pip", "install", "-q", "cython>=3.0.0", "setuptools<=80.10.2"])
     if install_res.returncode != 0:
         logging.error(f"Failed to install compilation requirements (cython/setuptools): {install_res.stderr}")
         sys.exit(install_res.returncode)
