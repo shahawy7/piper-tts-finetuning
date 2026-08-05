@@ -40,6 +40,102 @@ def load_config(config_path: str) -> dict:
             return yaml.safe_load(f)
     return {}
 
+def run_command_in_pipeline(cmd: list, cwd: str = None) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+
+def ensure_piper_train_installed():
+    """Checks if piper_train is installed. If not, clones, installs, patches, and compiles it."""
+    try:
+        import piper_train
+        logging.info("✓ piper_train module is already installed.")
+        return
+    except ImportError:
+        logging.info("🔍 piper_train module not found. Initiating automatic local installation...")
+
+    project_root = Path(__file__).resolve().parent.parent
+    piper_src = project_root / "piper_src"
+
+    if not piper_src.exists():
+        logging.info(f"Cloning rhasspy/piper repository into {piper_src}...")
+        res = run_command_in_pipeline(["git", "clone", "https://github.com/rhasspy/piper.git", str(piper_src)])
+        if res.returncode != 0:
+            logging.error(f"Failed to clone piper: {res.stderr}")
+            sys.exit(res.returncode)
+
+    # Install in editable mode
+    logging.info("Installing piper_train package in editable mode...")
+    res = run_command_in_pipeline([sys.executable, "-m", "pip", "install", "-q", "--no-deps", "-e", str(piper_src / "src" / "python")])
+    if res.returncode != 0:
+        logging.error(f"Failed to install piper_train: {res.stderr}")
+        sys.exit(res.returncode)
+
+    # Patch 1: PyTorch 2.6 weights_only checkpoint unpickling
+    main_py = piper_src / "src" / "python" / "piper_train" / "__main__.py"
+    if main_py.exists():
+        content = main_py.read_text(encoding="utf-8")
+        patch = (
+            "import pathlib, torch\n"
+            "try:\n"
+            "    torch.serialization.add_safe_globals([pathlib.PosixPath, pathlib.WindowsPath])\n"
+            "except Exception:\n"
+            "    pass\n\n"
+        )
+        if "add_safe_globals" not in content:
+            main_py.write_text(patch + content, encoding="utf-8")
+            logging.info("Applied PyTorch 2.6 unpickling patch to piper_train/__main__.py")
+
+    # Patch 2: Single-speaker dataset collate assertion in dataset.py
+    dataset_py = piper_src / "src" / "python" / "piper_train" / "vits" / "dataset.py"
+    if dataset_py.exists():
+        ds_content = dataset_py.read_text(encoding="utf-8")
+        old_code = "if utt.speaker_id is not None:"
+        new_code = "if self.is_multispeaker and (utt.speaker_id is not None):"
+        if old_code in ds_content:
+            ds_content = ds_content.replace(old_code, new_code)
+            dataset_py.write_text(ds_content, encoding="utf-8")
+            logging.info("Applied single-speaker patch to piper_train/vits/dataset.py")
+
+    # Patch 3: Dynamic guard assertion in transforms.py for ONNX export
+    transforms_py = piper_src / "src" / "python" / "piper_train" / "vits" / "transforms.py"
+    if transforms_py.exists():
+        tf_content = transforms_py.read_text(encoding="utf-8")
+        old_assert = "assert (discriminant >= 0).all(), discriminant"
+        new_assert = "discriminant = torch.clamp(discriminant, min=0)"
+        if old_assert in tf_content:
+            tf_content = tf_content.replace(old_assert, new_assert)
+            transforms_py.write_text(tf_content, encoding="utf-8")
+            logging.info("Applied spline clamp patch to piper_train/vits/transforms.py")
+
+    # Patch 4: Force legacy TorchScript tracing (dynamo=False) in export_onnx.py
+    export_py = piper_src / "src" / "python" / "piper_train" / "export_onnx.py"
+    if export_py.exists():
+        exp_content = export_py.read_text(encoding="utf-8")
+        if "dynamo=" not in exp_content and "torch.onnx.export(" in exp_content:
+            exp_content = exp_content.replace("torch.onnx.export(", "torch.onnx.export(dynamo=False, ")
+            export_py.write_text(exp_content, encoding="utf-8")
+            logging.info("Applied dynamo=False patch to piper_train/export_onnx.py")
+
+    # Compile monotonic_align
+    import sysconfig
+    mono_dir = piper_src / "src" / "python" / "piper_train" / "vits" / "monotonic_align"
+    out_subdir = mono_dir / "monotonic_align"
+    out_subdir.mkdir(parents=True, exist_ok=True)
+
+    logging.info("Compiling cython monotonic_align module...")
+    res = run_command_in_pipeline([sys.executable, "-m", "cython", "-3", "core.pyx"], cwd=str(mono_dir))
+    if res.returncode != 0:
+        logging.warning(f"Cython compilation warning: {res.stderr}")
+
+    py_inc = sysconfig.get_path("include")
+    suffix = sysconfig.get_config_var("EXT_SUFFIX")
+    out_so = str(out_subdir / f"core{suffix}")
+    res = run_command_in_pipeline(["gcc", "-shared", "-fPIC", "-O2", f"-I{py_inc}", "core.c", "-o", out_so], cwd=str(mono_dir))
+    if res.returncode != 0:
+        logging.error(f"Failed to compile monotonic_align C extension: {res.stderr}")
+        sys.exit(res.returncode)
+
+    logging.info("✅ Automatic installation and setup of piper_train successful!")
+
 def run_step(command: list, description: str):
     logging.info(f"\n==========================================")
     logging.info(f"🚀 [STEP] {description}")
@@ -67,6 +163,9 @@ def main():
         setup_logging(Path(args.log_file))
     else:
         setup_logging()
+
+    # Ensure piper_train training package is installed, compiled, and patched
+    ensure_piper_train_installed()
 
     cfg = load_config(args.config)
     data_root = Path(args.data_root)

@@ -321,8 +321,8 @@ def prepare_dataset(
 
     try:
         if hasattr(data, "cast_column") and "audio" in data.column_names:
-            logging.info("Casting audio column with datasets.Audio(decode=True)...")
-            data = data.cast_column("audio", Audio(decode=True))
+            logging.info("Casting audio column with datasets.Audio(decode=False) to avoid torchcodec dependency...")
+            data = data.cast_column("audio", Audio(decode=False))
     except Exception as e:
         logging.warning(f"Audio column casting skipped: {e}")
 
