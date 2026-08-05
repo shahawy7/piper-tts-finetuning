@@ -121,14 +121,23 @@ def ensure_piper_train_installed():
     out_subdir = mono_dir / "monotonic_align"
     out_subdir.mkdir(parents=True, exist_ok=True)
 
-    logging.info("Compiling cython monotonic_align module...")
+    # Make sure cython and setuptools are installed in this environment
+    logging.info("Ensuring cython>=3.0.0 and setuptools are installed...")
+    install_res = run_command_in_pipeline([sys.executable, "-m", "pip", "install", "-q", "cython>=3.0.0", "setuptools"])
+    if install_res.returncode != 0:
+        logging.error(f"Failed to install compilation requirements (cython/setuptools): {install_res.stderr}")
+        sys.exit(install_res.returncode)
+
+    logging.info("Compiling cython monotonic_align module (generating Python 3.12 compatible core.c)...")
     res = run_command_in_pipeline([sys.executable, "-m", "cython", "-3", "core.pyx"], cwd=str(mono_dir))
     if res.returncode != 0:
-        logging.warning(f"Cython compilation warning: {res.stderr}")
+        logging.error(f"Cython compilation failed: {res.stderr}")
+        sys.exit(res.returncode)
 
     py_inc = sysconfig.get_path("include")
     suffix = sysconfig.get_config_var("EXT_SUFFIX")
     out_so = str(out_subdir / f"core{suffix}")
+    logging.info("Building monotonic_align C extension with GCC...")
     res = run_command_in_pipeline(["gcc", "-shared", "-fPIC", "-O2", f"-I{py_inc}", "core.c", "-o", out_so], cwd=str(mono_dir))
     if res.returncode != 0:
         logging.error(f"Failed to compile monotonic_align C extension: {res.stderr}")
